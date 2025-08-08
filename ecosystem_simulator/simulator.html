@@ -1,0 +1,602 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Intelligent Ecosystem Simulation – Playable</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Roboto+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <style>
+    body { font-family: 'Inter', sans-serif; overscroll-behavior: none; }
+    .font-mono { font-family: 'Roboto Mono', monospace; }
+    input[type="range"] { -webkit-appearance: none; appearance: none; width: 100%; height: 8px; background: #4a5568; border-radius: 5px; outline: none; opacity: 0.9; }
+    input[type="range"]::-webkit-slider-thumb { -webkit-appearance: none; appearance: none; width: 18px; height: 18px; background: #a0aec0; cursor: pointer; border-radius: 50%; border: 2px solid #1a202c; }
+    input[type="range"]::-moz-range-thumb { width: 18px; height: 18px; background: #a0aec0; cursor: pointer; border-radius: 50%; border: 2px solid #1a202c; }
+    .switch { position: relative; display: inline-block; width: 50px; height: 28px; }
+    .switch input { opacity: 0; width: 0; height: 0; }
+    .slider { position: absolute; cursor: pointer; inset: 0; background-color: #4a5568; transition: .2s; border-radius: 34px; }
+    .slider:before { position: absolute; content: ""; height: 20px; width: 20px; left: 4px; bottom: 4px; background-color: white; transition: .2s; border-radius: 50%; }
+    input:checked + .slider { background-color: #48bb78; }
+    input:checked + .slider:before { transform: translateX(22px); }
+    .btn { @apply px-3 py-2 rounded-md font-semibold transition-colors; }
+    .hotkey { @apply text-[10px] rounded px-1 py-0.5 bg-gray-700 text-gray-200 border border-gray-600; }
+    canvas { image-rendering: pixelated; }
+  </style>
+</head>
+<body class="bg-gray-900 text-gray-300 flex flex-col h-screen antialiased">
+
+  <!-- Top Bar: Stats and Chart -->
+  <div class="bg-gray-800/50 backdrop-blur-sm border-b border-gray-700 p-2 shadow-lg">
+    <div class="max-w-7xl mx-auto">
+      <div class="flex flex-wrap justify-around items-center text-sm font-semibold mb-2 text-gray-200 gap-y-2">
+        <div>Tick: <span id="tick-count">0</span></div>
+        <div class="text-green-400">Critters: <span id="critter-count">0</span></div>
+        <div class="text-red-400">Predators: <span id="predator-count">0</span></div>
+        <div class="text-purple-400">Apex: <span id="apex-count">0</span></div>
+        <div class="text-blue-400">Food: <span id="food-count">0</span></div>
+        <div>Season: <span id="season-display">Spring</span></div>
+        <div>Event: <span id="event-display">None</span></div>
+        <div class="text-cyan-400 font-mono">Stable: <span id="stability-stopwatch">00:00.000</span></div>
+        <div>Speed: <span id="speed-display">1x</span></div>
+      </div>
+      <div class="h-24"><canvas id="population-chart"></canvas></div>
+    </div>
+  </div>
+
+  <!-- Main Content: Simulation Canvas + Sidebar -->
+  <div class="flex flex-1 min-h-0">
+    <div class="flex-1 flex items-center justify-center p-3 min-h-0">
+      <canvas id="simulation-canvas" class="bg-gray-800 rounded-lg shadow-2xl border border-gray-700"></canvas>
+    </div>
+    <!-- Sidebar: Inspect / Presets / IO -->
+    <aside class="w-72 max-w-full border-l border-gray-700 p-3 hidden lg:block">
+      <h3 class="font-semibold mb-2">Inspector</h3>
+      <div class="text-xs space-y-1 font-mono bg-gray-800/50 rounded p-2">
+        <div>ID: <span id="ins-id">—</span></div>
+        <div>Type: <span id="ins-type">—</span></div>
+        <div>Age: <span id="ins-age">—</span></div>
+        <div>Energy: <span id="ins-energy">—</span></div>
+        <div>Trait: <span id="ins-trait">—</span></div>
+        <div>Speed/Sense: <span id="ins-ss">—</span></div>
+      </div>
+      <div class="h-px bg-gray-700 my-3"></div>
+      <h3 class="font-semibold mb-2">Presets</h3>
+      <div class="space-y-2">
+        <button id="preset-balanced" class="btn bg-gray-700 hover:bg-gray-600 w-full">Balanced</button>
+        <button id="preset-bloom" class="btn bg-green-700 hover:bg-green-600 w-full">Food Bloom</button>
+        <button id="preset-apex" class="btn bg-purple-700 hover:bg-purple-600 w-full">Apex Control</button>
+      </div>
+      <div class="h-px bg-gray-700 my-3"></div>
+      <h3 class="font-semibold mb-2">Save / Load</h3>
+      <div class="space-y-2">
+        <button id="btn-export" class="btn bg-blue-700 hover:bg-blue-600 w-full">Export JSON</button>
+        <label class="btn bg-yellow-700 hover:bg-yellow-600 w-full text-center cursor-pointer">
+          Import JSON<input id="file-import" type="file" accept="application/json" class="hidden" />
+        </label>
+      </div>
+      <p class="mt-3 text-xs text-gray-400">Tip: Click canvas to add entities (C/P/A/F), hold <span class="hotkey">Space</span> to pan, scroll to zoom, drag the blue circle to move Safe Zone.</p>
+    </aside>
+  </div>
+
+  <!-- Bottom Control Deck -->
+  <div class="bg-gray-800/50 backdrop-blur-sm border-t border-gray-700 p-3 shadow-lg">
+    <div class="max-w-7xl mx-auto">
+      <div class="flex flex-wrap justify-center items-center gap-3 mb-3">
+        <button id="start-pause-btn" class="btn bg-green-600 hover:bg-green-700">Start <span class="hotkey">(Space)</span></button>
+        <button id="step-btn" class="btn bg-indigo-600 hover:bg-indigo-700">Step</button>
+        <button id="reset-btn" class="btn bg-yellow-600 hover:bg-yellow-700">Reset</button>
+        <div class="flex items-center gap-2 p-2 bg-gray-700/50 rounded-md">
+          <span class="font-semibold text-sm">System:</span>
+          <span id="system-status" class="text-sm font-mono px-2 py-1 bg-gray-900 rounded">Initializing...</span>
+        </div>
+        <div class="flex items-center gap-2"><span class="text-sm font-semibold">Eco-Regulator</span>
+          <label class="switch"><input type="checkbox" id="eco-regulator-switch" checked><span class="slider"></span></label>
+        </div>
+        <div class="flex items-center gap-2"><span class="text-sm font-semibold">Auto-Introduce</span>
+          <label class="switch"><input type="checkbox" id="auto-introduce-switch"><span class="slider"></span></label>
+        </div>
+        <div class="flex items-center gap-2"><span class="text-sm font-semibold">Disasters</span>
+          <label class="switch"><input type="checkbox" id="disasters-switch" checked><span class="slider"></span></label>
+        </div>
+      </div>
+
+      <!-- Add buttons -->
+      <div class="flex flex-wrap justify-center items-center gap-2 mb-3 text-xs">
+        <button id="add-critter-btn" class="btn bg-green-500/60 hover:bg-green-500">+1 Critter <span class="hotkey">C</span></button>
+        <button id="add-predator-btn" class="btn bg-red-500/60 hover:bg-red-500">+1 Predator <span class="hotkey">P</span></button>
+        <button id="add-apex-btn" class="btn bg-purple-500/60 hover:bg-purple-500">+1 Apex <span class="hotkey">A</span></button>
+        <button id="add-food-btn" class="btn bg-blue-500/60 hover:bg-blue-500">+10 Food <span class="hotkey">F</span></button>
+      </div>
+
+      <!-- Sliders -->
+      <div class="grid grid-cols-2 md:grid-cols-5 gap-x-6 gap-y-2 text-sm mb-2">
+        <div>
+          <label for="critter-slider" class="flex justify-between"><span>Critters</span><span id="critter-slider-value">50</span></label>
+          <input type="range" id="critter-slider" min="0" max="250" value="50">
+        </div>
+        <div>
+          <label for="predator-slider" class="flex justify-between"><span>Predators</span><span id="predator-slider-value">15</span></label>
+          <input type="range" id="predator-slider" min="0" max="120" value="15">
+        </div>
+        <div>
+          <label for="apex-slider" class="flex justify-between"><span>Apex</span><span id="apex-slider-value">5</span></label>
+          <input type="range" id="apex-slider" min="0" max="50" value="5">
+        </div>
+        <div>
+          <label for="food-slider" class="flex justify-between"><span>Food</span><span id="food-slider-value">100</span></label>
+          <input type="range" id="food-slider" min="0" max="400" value="100">
+        </div>
+        <div>
+          <label for="speed-slider" class="flex justify-between"><span>Sim Speed</span><span id="speed-slider-value">1</span>x</label>
+          <input type="range" id="speed-slider" min="0.1" max="4" step="0.1" value="1">
+        </div>
+      </div>
+
+      <!-- Stats row -->
+      <div class="text-xs font-mono text-gray-400 grid grid-cols-2 md:grid-cols-4 gap-x-4 gap-y-1 text-center">
+        <span>Critter Avg Life: <span id="critter-life-stat">N/A</span></span>
+        <span>Predator Avg Life: <span id="predator-life-stat">N/A</span></span>
+        <span>Critter B/D Rate: <span id="critter-rate-stat">N/A</span></span>
+        <span>Predator B/D Rate: <span id="predator-rate-stat">N/A</span></span>
+      </div>
+    </div>
+  </div>
+
+  <script>
+  document.addEventListener('DOMContentLoaded', () => {
+    // --- DOM ELEMENTS ---
+    const canvas = document.getElementById('simulation-canvas');
+    const ctx = canvas.getContext('2d');
+    const startPauseBtn = document.getElementById('start-pause-btn');
+    const stepBtn = document.getElementById('step-btn');
+    const resetBtn = document.getElementById('reset-btn');
+    const critterSlider = document.getElementById('critter-slider');
+    const predatorSlider = document.getElementById('predator-slider');
+    const apexSlider = document.getElementById('apex-slider');
+    const foodSlider = document.getElementById('food-slider');
+    const speedSlider = document.getElementById('speed-slider');
+    const critterSliderValue = document.getElementById('critter-slider-value');
+    const predatorSliderValue = document.getElementById('predator-slider-value');
+    const apexSliderValue = document.getElementById('apex-slider-value');
+    const foodSliderValue = document.getElementById('food-slider-value');
+    const speedSliderValue = document.getElementById('speed-slider-value');
+
+    const tickCountEl = document.getElementById('tick-count');
+    const critterCountEl = document.getElementById('critter-count');
+    const predatorCountEl = document.getElementById('predator-count');
+    const apexCountEl = document.getElementById('apex-count');
+    const foodCountEl = document.getElementById('food-count');
+
+    const systemStatusEl = document.getElementById('system-status');
+    const ecoRegulatorSwitch = document.getElementById('eco-regulator-switch');
+    const autoIntroduceSwitch = document.getElementById('auto-introduce-switch');
+    const disastersSwitch = document.getElementById('disasters-switch');
+    const seasonDisplayEl = document.getElementById('season-display');
+    const eventDisplayEl = document.getElementById('event-display');
+
+    const critterLifeStatEl = document.getElementById('critter-life-stat');
+    const predatorLifeStatEl = document.getElementById('predator-life-stat');
+    const critterRateStatEl = document.getElementById('critter-rate-stat');
+    const predatorRateStatEl = document.getElementById('predator-rate-stat');
+
+    const stabilityStopwatchEl = document.getElementById('stability-stopwatch');
+    const speedDisplayEl = document.getElementById('speed-display');
+
+    const ins = {
+      id: document.getElementById('ins-id'),
+      type: document.getElementById('ins-type'),
+      age: document.getElementById('ins-age'),
+      energy: document.getElementById('ins-energy'),
+      trait: document.getElementById('ins-trait'),
+      ss: document.getElementById('ins-ss'),
+    };
+
+    // Preset + IO
+    const presetBalancedBtn = document.getElementById('preset-balanced');
+    const presetBloomBtn = document.getElementById('preset-bloom');
+    const presetApexBtn = document.getElementById('preset-apex');
+    const exportBtn = document.getElementById('btn-export');
+    const importFile = document.getElementById('file-import');
+
+    // --- SIM STATE ---
+    let running = false;
+    let animationId;
+    let tick = 0;
+    let timeScale = 1; // affected by speed slider
+    let accumulator = 0; // fixed timestep accumulator
+    const dt = 1; // logical tick size
+
+    // world
+    let food = [], critters = [], predators = [], apexPredators = [];
+
+    // camera for pan/zoom
+    const camera = { x: 0, y: 0, z: 1, dragging: false, dragStart: {x:0,y:0}, worldStart:{x:0,y:0} };
+
+    // Stopwatch state
+    let totalStableTime = 0;
+    let stabilityStartTime = null;
+
+    // selection
+    let selected = null;
+    let entityCounter = 0;
+
+    // --- CONFIG ---
+    const config = {
+      terrain: { // simple noise-ish tiling for vibe only
+        tile: 24,
+        water: 0.12,
+        forest: 0.25,
+      },
+      food: { size: 2, color: '#63b3ed', energy: 100, baseRegenRate: 0.05 },
+      critter: { size: 4, color: '#48bb78', initialEnergy: 1000, maxEnergy: 2000, reproduceEnergy: 1500, baseSpeed: 1.2, baseSense: 80, fleeMultiplier: 1.8, baseEnergyCost: 1 },
+      predator: { size: 6, color: '#f56565', initialEnergy: 3000, maxEnergy: 6000, reproduceEnergy: 5000, baseSpeed: 1.4, baseSense: 120, fleeMultiplier: 1.7, baseEnergyCost: 2 },
+      apex: { size: 8, color: '#9f7aea', initialEnergy: 8000, maxEnergy: 16000, reproduceEnergy: 14000, baseSpeed: 1.6, baseSense: 150, baseEnergyCost: 4, territoryRadius: 150 },
+      traits: {
+        critter: {
+          fast:   { speedMod: 1.3, energyMod: 1.2, color: '#a7f3d0' },
+          tough:  { energyMod: 1.4, speedMod: 0.85, color: '#38a169' },
+          fertile:{ reproduceMod: 0.8, color: '#68d391' },
+        },
+        predator: {
+          stealthy: { senseMod: 0.7, color: '#c53030' },
+          powerful: { energyGainMod: 1.2, speedMod: 0.9, color: '#e53e3e' },
+        }
+      },
+      seasons: {
+        duration: 2000,
+        types: {
+          Spring: { foodMod: 1.2, costMod: 1.0, color: 'rgba(104, 211, 145, 0.05)'},
+          Summer: { foodMod: 1.5, costMod: 1.1, color: 'rgba(246, 224, 123, 0.05)'},
+          Autumn: { foodMod: 0.8, costMod: 1.0, color: 'rgba(237, 137, 54, 0.05)'},
+          Winter: { foodMod: 0.4, costMod: 1.3, color: 'rgba(160, 174, 192, 0.05)'},
+        }
+      },
+      disasters: { chance: 0.001, duration: 500, types: { foodShortage: {}, disease: {} } },
+      mutationRate: 0.1, autoIntroduceThreshold: 5, maxFood: 350,
+    };
+
+    // --- CANVAS & CHART ---
+    let chart;
+    function setupCanvas() {
+      const container = canvas.parentElement;
+      const size = Math.min(container.clientWidth, container.clientHeight) * 0.98;
+      canvas.width = Math.max(480, size);
+      canvas.height = Math.max(360, size);
+    }
+    function toScreen(x, y){ return { x: (x - camera.x) * camera.z + canvas.width/2, y: (y - camera.y) * camera.z + canvas.height/2 }; }
+    function toWorld(x, y){ return { x: (x - canvas.width/2)/camera.z + camera.x, y: (y - canvas.height/2)/camera.z + camera.y }; }
+
+    function setupChart(){
+      const c = document.getElementById('population-chart').getContext('2d');
+      if(chart) chart.destroy();
+      chart = new Chart(c, {
+        type: 'line',
+        data: { labels: [], datasets: [
+          { label: 'Critters', data: [], borderColor: config.critter.color, tension: 0.35, pointRadius: 0, borderWidth: 2 },
+          { label: 'Predators', data: [], borderColor: config.predator.color, tension: 0.35, pointRadius: 0, borderWidth: 2 },
+          { label: 'Apex', data: [], borderColor: config.apex.color, tension: 0.35, pointRadius: 0, borderWidth: 2 },
+        ]},
+        options: { responsive: true, maintainAspectRatio: false, animation: false, scales: { x: { display:false }, y: { beginAtZero:true, grid: { color:'rgba(255,255,255,0.1)' }, ticks:{ color:'#a0aec0', font:{ size:10 } } } }, plugins: { legend:{ display:false } } }
+      });
+    }
+    window.addEventListener('resize', () => { setupCanvas(); draw(); });
+
+    // --- UTILS ---
+    const rand = (min,max)=> Math.random()*(max-min)+min;
+    const distSq = (a,b)=> (a.x-b.x)**2 + (a.y-b.y)**2;
+    const clamp = (v,min,max)=> Math.max(min, Math.min(max,v));
+
+    function fmtTime(ms){ const s = Math.floor(ms/1000); const m = Math.floor(s/60).toString().padStart(2,'0'); const s2 = (s%60).toString().padStart(2,'0'); const ms3 = (ms%1000).toString().padStart(3,'0'); return `${m}:${s2}.${ms3}`; }
+
+    // --- ENVIRONMENT ---
+    const environment = {
+      season: 'Spring', seasonTick: 0, activeEvent: null, eventTick: 0, activeRegulation: null, regulationTick: 0,
+      safeZone: { x: 0, y: 0, radius: 70, color: 'rgba(66, 153, 225, 0.13)', dragging: false },
+      update(){
+        this.seasonTick++;
+        if(this.seasonTick >= config.seasons.duration){
+          this.seasonTick = 0;
+          const names = Object.keys(config.seasons.types);
+          this.season = names[(names.indexOf(this.season)+1)%names.length];
+        }
+        if(this.activeEvent){
+          this.eventTick++;
+          if(this.eventTick >= config.disasters.duration) this.clearEvent();
+        } else if(this.activeRegulation){
+          this.regulationTick++;
+          if(this.regulationTick >= this.activeRegulation.duration) this.clearRegulation();
+        } else {
+          if(disastersSwitch.checked && Math.random()<config.disasters.chance) this.triggerDisaster();
+          if(ecoRegulatorSwitch.checked) this.runEcoRegulator();
+        }
+        if(this.activeEvent?.type==='disease'){
+          const species = this.activeEvent.species==='critter' ? critters : predators;
+          species.forEach(e=>{ if(e.isDiseased && Math.random()<0.01) e.energy *= 0.85; });
+        }
+      },
+      clearEvent(){ this.activeEvent=null; this.eventTick=0; critters.forEach(c=>c.isDiseased=false); predators.forEach(p=>p.isDiseased=false); },
+      clearRegulation(){ this.activeRegulation=null; this.regulationTick=0; },
+      triggerDisaster(){
+        if(critters.length>90 && Math.random()<0.6){ this.activeEvent={ type:'disease', species:'critter' }; critters.forEach(c=>c.isDiseased=(Math.random()<0.25)); }
+        else if(predators.length>50){ this.activeEvent={ type:'disease', species:'predator' }; predators.forEach(p=>p.isDiseased=(Math.random()<0.25)); }
+        else { this.activeEvent={ type:'foodShortage' }; }
+      },
+      runEcoRegulator(){
+        // soft intervention when prey collapses
+        if(critters.length>0 && critters.length<15 && predators.length>10){
+          this.activeRegulation = { type:'Fertile Spring', duration: 600, foodMod: 1.6, costMod: 0.85 };
+        }
+      },
+      foodRate(){ let r=config.food.baseRegenRate; r *= this.activeRegulation?.foodMod || config.seasons.types[this.season].foodMod; if(this.activeEvent?.type==='foodShortage') r*=0.12; return r; },
+      costMult(){ return this.activeRegulation?.costMod || config.seasons.types[this.season].costMod; },
+      eventName(){ if(this.activeEvent) return `${this.activeEvent.type}${this.activeEvent.species? ' ('+this.activeEvent.species+')':''}`; if(this.activeRegulation) return this.activeRegulation.type; return 'None'; },
+    };
+
+    // --- STATS ---
+    const stats = {
+      critter:{ births:0, deaths:0, totalLife:0 }, predator:{ births:0, deaths:0, totalLife:0 }, lastCalcTick:0,
+      birth(t){ this[t].births++; }, death(t, age){ this[t].deaths++; this[t].totalLife += age; }, calc(){ if(tick - this.lastCalcTick < 300) return; const dC=this.critter.deaths, bC=this.critter.births; const dP=this.predator.deaths, bP=this.predator.births; critterLifeStatEl.textContent = dC? (this.critter.totalLife/dC).toFixed(0):'N/A'; predatorLifeStatEl.textContent = dP? (this.predator.totalLife/dP).toFixed(0):'N/A'; critterRateStatEl.textContent = `${(bC/300).toFixed(2)}/${(dC/300).toFixed(2)}`; predatorRateStatEl.textContent = `${(bP/300).toFixed(2)}/${(dP/300).toFixed(2)}`; this.critter.births=this.critter.deaths=this.critter.totalLife=0; this.predator.births=this.predator.deaths=this.predator.totalLife=0; this.lastCalcTick=tick; } };
+
+    // --- BASE CLASSES ---
+    class Entity{ constructor(x,y){ this.id=++entityCounter; this.x=x; this.y=y; this.vx=rand(-1,1); this.vy=rand(-1,1); this.age=0; this.isDiseased=false; } }
+    class Food extends Entity{ constructor(x,y){ super(x,y); this.size=config.food.size; this.color=config.food.color; } draw(){ const s=toScreen(this.x,this.y); ctx.beginPath(); ctx.arc(s.x,s.y,this.size*camera.z,0,Math.PI*2); ctx.fillStyle=this.color; ctx.fill(); } }
+
+    class Creature extends Entity{
+      constructor(x,y,base,traits){ super(x,y); this.base=base; this.energy=base.initialEnergy; this.size=base.size; this.trait=null; if(traits){ const names=Object.keys(traits); this.trait= names[Math.floor(Math.random()*names.length)]||null; const tp = this.trait? traits[this.trait] : {}; this.speed= base.baseSpeed * (tp.speedMod||1); this.sense= base.baseSense * (tp.senseMod||1); this.energyCost= base.baseEnergyCost * (tp.energyMod||1); this.reproduceEnergy= base.reproduceEnergy * (tp.reproduceMod||1); this.color = tp.color || base.color; } else { this.speed=base.baseSpeed; this.sense=base.baseSense; this.energyCost=base.baseEnergyCost; this.reproduceEnergy=base.reproduceEnergy; this.color=base.color; }
+      }
+      move(dx,dy,mul=1){ const m=Math.hypot(dx,dy); if(m>0){ this.vx=(dx/m)*this.speed*mul; this.vy=(dy/m)*this.speed*mul; } this.x+=this.vx; this.y+=this.vy; // wrap
+        const w=worldSize.w/2, h=worldSize.h/2; if(this.x<-w) this.x=w; if(this.x>w) this.x=-w; if(this.y<-h) this.y=h; if(this.y>h) this.y=-h;
+        const flee = mul>1? (this.base.fleeMultiplier||1) : 1; this.energy -= this.energyCost * environment.costMult() * flee; }
+      wander(){ const ang = rand(-Math.PI,Math.PI); this.move(Math.cos(ang), Math.sin(ang)); }
+      findNearest(list){ let n=null, min=this.sense**2; for(const e of list){ const stealth = e.trait==='stealthy'?0.5:1; const d = distSq(this,e); if(d<min*stealth){ min=d; n=e; } } return n; }
+      reproduce(out, type){ if(this.energy >= this.reproduceEnergy){ this.energy *= 0.5; const child = new this.constructor(this.x, this.y); if(Math.random()>config.mutationRate) child.trait=this.trait; out.push(child); stats.birth(type); } }
+      draw(){ const s=toScreen(this.x,this.y); ctx.beginPath(); ctx.arc(s.x,s.y,this.size*camera.z,0,Math.PI*2); ctx.fillStyle=this.color; ctx.fill(); if(this.isDiseased){ ctx.strokeStyle='#e53e3e'; ctx.lineWidth=2; ctx.stroke(); } if(selected===this){ ctx.strokeStyle='#edf2f7'; ctx.lineWidth=1; ctx.stroke(); }
+      }
+    }
+
+    class Critter extends Creature{ constructor(x,y){ super(x,y,config.critter,config.traits.critter); }
+      update(){ this.age++; const threat = this.findNearest(predators.concat(apexPredators)); if(threat){ const dz = distSq(this, {x:environment.safeZone.x,y:environment.safeZone.y}); if(dz < environment.safeZone.radius**2){ // already near safe zone, orbit outwards
+            this.move(this.x - environment.safeZone.x, this.y - environment.safeZone.y, this.base.fleeMultiplier);
+          } else { // flee toward safe zone
+            this.move(environment.safeZone.x - this.x, environment.safeZone.y - this.y, this.base.fleeMultiplier);
+          } return; }
+        const foodN = this.findNearest(food); if(foodN){ this.move(foodN.x - this.x, foodN.y - this.y); if(distSq(this,foodN) < (this.size+config.food.size)**2){ this.energy = Math.min(this.base.maxEnergy, this.energy + config.food.energy); food = food.filter(f=>f!==foodN); } return; }
+        this.wander(); }
+    }
+
+    class Predator extends Creature{ constructor(x,y){ super(x,y,config.predator,config.traits.predator); }
+      update(){ this.age++; const dz = distSq(this, {x:environment.safeZone.x,y:environment.safeZone.y}); if(dz < environment.safeZone.radius**2){ this.move(this.x - environment.safeZone.x, this.y - environment.safeZone.y, 2); return; }
+        const prey = this.findNearest(critters); if(prey){ this.move(prey.x - this.x, prey.y - this.y); if(distSq(this,prey) < (this.size+prey.size)**2){ const gain = prey.base.maxEnergy * (this.trait==='powerful'? 1.1: 0.8); this.energy = Math.min(this.base.maxEnergy, this.energy + gain); stats.death('critter', prey.age); critters = critters.filter(c=>c!==prey); } return; }
+        this.wander(); }
+    }
+
+    class ApexPredator extends Creature{ constructor(x,y){ super(x,y,config.apex,null); this.territory={ x, y, r: config.apex.territoryRadius}; }
+      update(){ this.age++; const d2 = distSq(this,{x:this.territory.x,y:this.territory.y}); if(d2 > this.territory.r**2){ this.move(this.territory.x - this.x, this.territory.y - this.y, 0.6); }
+        const p = this.findNearest(predators); if(p){ this.move(p.x - this.x, p.y - this.y); if(distSq(this,p) < (this.size+p.size)**2){ this.energy = Math.min(this.base.maxEnergy, this.energy + p.base.maxEnergy*0.9); stats.death('predator', p.age); predators = predators.filter(q=>q!==p); } return; }
+        this.wander(); }
+      draw(){ super.draw(); const s=toScreen(this.territory.x, this.territory.y); ctx.beginPath(); ctx.arc(s.x, s.y, this.territory.r*camera.z, 0, Math.PI*2); ctx.strokeStyle='rgba(159,122,234,0.22)'; ctx.lineWidth=2; ctx.stroke(); }
+    }
+
+    // --- WORLD ---
+    const worldSize = { w: 1200, h: 1200 };
+    let terrainSeed = Math.random()*10000;
+    function noise2d(x,y){ // cheap hash noise
+      const n = Math.sin(x*12.9898 + y*78.233 + terrainSeed)*43758.5453; return n - Math.floor(n);
+    }
+
+    function addFood(count=1){ for(let i=0;i<count;i++){ const x=rand(-worldSize.w/2, worldSize.w/2); const y=rand(-worldSize.h/2, worldSize.h/2); food.push(new Food(x,y)); }}
+    function addCritter(){ critters.push(new Critter(rand(-worldSize.w/2, worldSize.w/2), rand(-worldSize.h/2, worldSize.h/2))); }
+    function addPredator(){ predators.push(new Predator(rand(-worldSize.w/2, worldSize.w/2), rand(-worldSize.h/2, worldSize.h/2))); }
+    function addApex(){ const ax=rand(-worldSize.w/2, worldSize.w/2), ay=rand(-worldSize.h/2, worldSize.h/2); apexPredators.push(new ApexPredator(ax,ay)); }
+
+    function reset(){
+      tick=0; food=[]; critters=[]; predators=[]; apexPredators=[]; selected=null; totalStableTime=0; stabilityStartTime=null; stabilityStopwatchEl.textContent = fmtTime(0);
+      for(let i=0;i<parseInt(critterSlider.value);i++) addCritter();
+      for(let i=0;i<parseInt(predatorSlider.value);i++) addPredator();
+      for(let i=0;i<parseInt(apexSlider.value);i++) addApex();
+      addFood(parseInt(foodSlider.value));
+      environment.clearEvent(); environment.clearRegulation();
+      if(chart){ chart.data.labels=[]; chart.data.datasets.forEach(d=>d.data=[]); chart.update(); }
+      updateUI(); draw();
+    }
+
+    // --- UPDATE/RENDER ---
+    function logicTick(){
+      tick++;
+      environment.update();
+      // food regen biased to terrain richer tiles
+      const rate = environment.foodRate();
+      if(Math.random()<rate*3 && food.length<config.maxFood) addFood();
+      if(Math.random()<rate && food.length<config.maxFood) addFood();
+
+      const newbornC=[], newbornP=[];
+      critters.forEach(c=>{ c.update(); c.reproduce(newbornC,'critter'); if(c.energy<=0){ stats.death('critter', c.age); }});
+      predators.forEach(p=>{ p.update(); p.reproduce(newbornP,'predator'); if(p.energy<=0){ stats.death('predator', p.age); }});
+      apexPredators.forEach(a=> a.update());
+
+      critters = critters.filter(c=> c.energy>0);
+      predators = predators.filter(p=> p.energy>0);
+      apexPredators = apexPredators.filter(a=> a.energy>0);
+      critters.push(...newbornC); predators.push(...newbornP);
+
+      if(autoIntroduceSwitch.checked){ if(critters.length<config.autoIntroduceThreshold) addCritter(); if(predators.length<config.autoIntroduceThreshold && critters.length>20) addPredator(); }
+
+      // stability stopwatch
+      const stable = isStable();
+      if(stable && stabilityStartTime===null){ stabilityStartTime = performance.now(); }
+      else if(!stable && stabilityStartTime!==null){ const el = performance.now()-stabilityStartTime; totalStableTime += el; stabilityStartTime=null; stabilityStopwatchEl.textContent = fmtTime(totalStableTime); }
+
+      if(stabilityStartTime!==null){ const cur = performance.now()-stabilityStartTime; stabilityStopwatchEl.textContent = fmtTime(totalStableTime+cur); }
+
+      if(tick%10===0) updateUI();
+    }
+
+    function draw(){
+      ctx.clearRect(0,0,canvas.width,canvas.height);
+
+      // terrain tiles
+      const t = config.terrain.tile*camera.z;
+      for(let sx= -t*((canvas.width/t)|0); sx<canvas.width; sx+=t){
+        for(let sy= -t*((canvas.height/t)|0); sy<canvas.height; sy+=t){
+          const w = toWorld(sx, sy); const n = noise2d(Math.floor(w.x/90), Math.floor(w.y/90));
+          let col = '#1f2937'; // base land
+          if(n < config.terrain.water) col = '#0e3a5b';
+          else if(n < config.terrain.forest) col = '#223c2f';
+          ctx.fillStyle = col; ctx.fillRect(sx, sy, t+1, t+1);
+        }
+      }
+
+      // season tint
+      ctx.fillStyle = config.seasons.types[environment.season].color; ctx.fillRect(0,0,canvas.width,canvas.height);
+
+      // rich zone (bottom-right world corner)
+      const rz = { x: worldSize.w/2 - 80, y: worldSize.h/2 - 80, r: 90 };
+      const rzS = toScreen(rz.x, rz.y); ctx.beginPath(); ctx.arc(rzS.x, rzS.y, rz.r*camera.z, 0, Math.PI*2); ctx.fillStyle='rgba(246, 224, 123, 0.10)'; ctx.fill();
+
+      // safe zone drag handle
+      const szS = toScreen(environment.safeZone.x, environment.safeZone.y); ctx.beginPath(); ctx.arc(szS.x, szS.y, environment.safeZone.radius*camera.z, 0, Math.PI*2); ctx.fillStyle=environment.safeZone.color; ctx.fill();
+      ctx.beginPath(); ctx.arc(szS.x, szS.y, 6, 0, Math.PI*2); ctx.fillStyle="#63b3ed"; ctx.fill();
+
+      // entities
+      food.forEach(f=> f.draw());
+      critters.forEach(c=> c.draw());
+      predators.forEach(p=> p.draw());
+      apexPredators.forEach(a=> a.draw());
+    }
+
+    function frame(ts){ if(!running){ draw(); return; } if(!lastTs) lastTs=ts; const elapsed = (ts-lastTs)/ (1000/60); lastTs = ts; accumulator += elapsed * timeScale; while(accumulator >= dt){ logicTick(); accumulator -= dt; } draw(); animationId = requestAnimationFrame(frame); }
+    let lastTs=0;
+
+    // --- UI & STATUS ---
+    function updateUI(){
+      tickCountEl.textContent = tick;
+      critterCountEl.textContent = critters.length;
+      predatorCountEl.textContent = predators.length;
+      apexCountEl.textContent = apexPredators.length;
+      foodCountEl.textContent = food.length;
+      seasonDisplayEl.textContent = environment.season;
+      eventDisplayEl.textContent = environment.eventName();
+
+      if(tick%30===0 && chart){ chart.data.labels.push(tick); chart.data.datasets[0].data.push(critters.length); chart.data.datasets[1].data.push(predators.length); chart.data.datasets[2].data.push(apexPredators.length); if(chart.data.labels.length>120){ chart.data.labels.shift(); chart.data.datasets.forEach(d=>d.data.shift()); } chart.update('none'); }
+
+      stats.calc();
+      updateSystemStatus();
+    }
+
+    function isStable(){ const c=critters.length, p=predators.length, a=apexPredators.length; return (c>5 && p>5 && a>0 && p/c>0.12 && p/c<0.38); }
+
+    function updateSystemStatus(){
+      const c=critters.length, p=predators.length, a=apexPredators.length; let status='Fluctuating', cls='text-gray-400 bg-gray-900';
+      const ratio = p/(c||1), aRatio=a/(p||1);
+      if(c===0 && p===0 && a===0){ status='Extinction Event'; cls='text-gray-500 bg-gray-900'; }
+      else if(ratio>0.5){ status='Critters Overhunted'; cls='text-yellow-200 bg-yellow-800'; }
+      else if(c>0 && p===0){ status='Critters Unchecked'; cls='text-green-200 bg-green-800'; }
+      else if(p>0 && ratio<0.1){ status='Predators Starving'; cls='text-red-200 bg-red-800'; }
+      else if(a>0 && aRatio>0.4){ status='Apex Dominant'; cls='text-purple-200 bg-purple-800'; }
+      else if(isStable()){ status='Ecosystem Stable'; cls='text-blue-200 bg-blue-800'; }
+      systemStatusEl.textContent = status; systemStatusEl.className = `text-sm font-mono px-2 py-1 rounded ${cls}`;
+    }
+
+    // --- INPUT: add/inspect/pan/zoom ---
+    const keys = new Set();
+    let placeMode = 'critter'; // C/P/A/F
+
+    function spawnAtWorld(x,y){ if(placeMode==='critter') critters.push(new Critter(x,y)); else if(placeMode==='predator') predators.push(new Predator(x,y)); else if(placeMode==='apex') apexPredators.push(new ApexPredator(x,y)); else if(placeMode==='food') food.push(new Food(x,y)); }
+
+    canvas.addEventListener('mousedown', (e)=>{
+      const w = toWorld(e.offsetX, e.offsetY);
+      const sz = environment.safeZone; const d = Math.hypot(w.x - sz.x, w.y - sz.y);
+      if(d < sz.radius){ sz.dragging=true; return; }
+      if(keys.has(' ')){ camera.dragging=true; camera.dragStart={x:e.offsetX,y:e.offsetY}; camera.worldStart={x:camera.x,y:camera.y}; return; }
+      // select entity if near
+      const all=[...critters,...predators,...apexPredators]; selected = null;
+      let best=null, bestD=1e9;
+      for(const ent of all){ const ds=Math.hypot(ent.x-w.x, ent.y-w.y); if(ds<10 && ds<bestD){ best=ent; bestD=ds; } }
+      if(best){ selected=best; showInspector(best); }
+      else { spawnAtWorld(w.x,w.y); }
+    });
+
+    canvas.addEventListener('mousemove', (e)=>{
+      const w = toWorld(e.offsetX, e.offsetY);
+      if(environment.safeZone.dragging){ environment.safeZone.x = clamp(w.x, -worldSize.w/2+50, worldSize.w/2-50); environment.safeZone.y = clamp(w.y, -worldSize.h/2+50, worldSize.h/2-50); return; }
+      if(camera.dragging){ const dx=(e.offsetX - camera.dragStart.x)/camera.z; const dy=(e.offsetY - camera.dragStart.y)/camera.z; camera.x = camera.worldStart.x - dx; camera.y = camera.worldStart.y - dy; }
+    });
+    window.addEventListener('mouseup', ()=>{ environment.safeZone.dragging=false; camera.dragging=false; });
+
+    canvas.addEventListener('wheel', (e)=>{ const zBefore=camera.z; camera.z = clamp(camera.z * (e.deltaY<0? 1.1: 0.9), 0.4, 3); // zoom toward cursor
+      const w1=toWorld(e.offsetX,e.offsetY); camera.x += (w1.x - camera.x) * (1 - zBefore/camera.z); camera.y += (w1.y - camera.y) * (1 - zBefore/camera.z); });
+
+    window.addEventListener('keydown', (e)=>{
+      keys.add(e.key);
+      if(e.key==='c' || e.key==='C'){ placeMode='critter'; }
+      if(e.key==='p' || e.key==='P'){ placeMode='predator'; }
+      if(e.key==='a' || e.key==='A'){ placeMode='apex'; }
+      if(e.key==='f' || e.key==='F'){ placeMode='food'; }
+      if(e.key===' '){ // start/pause
+        e.preventDefault(); toggleRun();
+      }
+    });
+    window.addEventListener('keyup', (e)=> keys.delete(e.key));
+
+    function showInspector(ent){ ins.id.textContent = ent.id; ins.type.textContent = ent instanceof Critter? 'Critter' : ent instanceof Predator? 'Predator' : ent instanceof ApexPredator? 'Apex' : '—'; ins.age.textContent = ent.age; ins.energy.textContent = Math.round(ent.energy); ins.trait.textContent = ent.trait || '—'; ins.ss.textContent = `${(ent.speed||0).toFixed(2)} / ${(ent.sense||0).toFixed(0)}`; }
+
+    // --- BUTTONS & SLIDERS ---
+    function toggleRun(){ running = !running; startPauseBtn.textContent = running? 'Pause (Space)': 'Start (Space)'; startPauseBtn.classList.toggle('bg-green-600', !running); startPauseBtn.classList.toggle('hover:bg-green-700', !running); startPauseBtn.classList.toggle('bg-red-600', running); startPauseBtn.classList.toggle('hover:bg-red-700', running); if(running){ if(isStable()) stabilityStartTime = performance.now(); animationId = requestAnimationFrame(frame); } else { if(stabilityStartTime!==null){ const el = performance.now()-stabilityStartTime; totalStableTime += el; stabilityStartTime=null; stabilityStopwatchEl.textContent = fmtTime(totalStableTime); } cancelAnimationFrame(animationId); draw(); } }
+
+    startPauseBtn.addEventListener('click', toggleRun);
+    stepBtn.addEventListener('click', ()=>{ if(!running){ logicTick(); draw(); }});
+
+    resetBtn.addEventListener('click', ()=>{ running=false; startPauseBtn.textContent='Start (Space)'; startPauseBtn.classList.add('bg-green-600','hover:bg-green-700'); startPauseBtn.classList.remove('bg-red-600','hover:bg-red-700'); cancelAnimationFrame(animationId); reset(); });
+
+    document.getElementById('add-critter-btn').addEventListener('click', ()=>{ addCritter(); updateUI(); draw(); });
+    document.getElementById('add-predator-btn').addEventListener('click', ()=>{ addPredator(); updateUI(); draw(); });
+    document.getElementById('add-apex-btn').addEventListener('click', ()=>{ addApex(); updateUI(); draw(); });
+    document.getElementById('add-food-btn').addEventListener('click', ()=>{ addFood(10); updateUI(); draw(); });
+
+    critterSlider.addEventListener('input', e=> critterSliderValue.textContent = e.target.value);
+    predatorSlider.addEventListener('input', e=> predatorSliderValue.textContent = e.target.value);
+    apexSlider.addEventListener('input', e=> apexSliderValue.textContent = e.target.value);
+    foodSlider.addEventListener('input', e=> foodSliderValue.textContent = e.target.value);
+
+    speedSlider.addEventListener('input', (e)=>{ timeScale = parseFloat(e.target.value); speedSliderValue.textContent = timeScale.toFixed(1); speedDisplayEl.textContent = `${timeScale.toFixed(1)}x`; });
+
+    // Presets
+    presetBalancedBtn.addEventListener('click', ()=>{ critterSlider.value=60; predatorSlider.value=18; apexSlider.value=4; foodSlider.value=140; critterSliderValue.textContent=60; predatorSliderValue.textContent=18; apexSliderValue.textContent=4; foodSliderValue.textContent=140; reset(); });
+    presetBloomBtn.addEventListener('click', ()=>{ critterSlider.value=40; predatorSlider.value=10; apexSlider.value=2; foodSlider.value=260; critterSliderValue.textContent=40; predatorSliderValue.textContent=10; apexSliderValue.textContent=2; foodSliderValue.textContent=260; reset(); });
+    presetApexBtn.addEventListener('click', ()=>{ critterSlider.value=80; predatorSlider.value=30; apexSlider.value=8; foodSlider.value=140; critterSliderValue.textContent=80; predatorSliderValue.textContent=30; apexSliderValue.textContent=8; foodSliderValue.textContent=140; reset(); });
+
+    // Export / Import
+    exportBtn.addEventListener('click', ()=>{
+      const state = { tick, entities: { food, critters, predators, apexPredators }, env: { season: environment.season, safeZone: environment.safeZone }, camera, sliders: { critter:critterSlider.value, predator:predatorSlider.value, apex:apexSlider.value, food:foodSlider.value, speed: speedSlider.value } };
+      const data = JSON.stringify(state, (k,v)=> (k==='vx'||k==='vy')? undefined : v, 2);
+      const blob = new Blob([data], { type:'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a'); a.href=url; a.download='ecosim_state.json'; a.click(); URL.revokeObjectURL(url);
+    });
+
+    importFile.addEventListener('change', (e)=>{
+      const file = e.target.files[0]; if(!file) return; const reader = new FileReader(); reader.onload = ()=>{ try{
+        const s = JSON.parse(reader.result);
+        tick = s.tick||0; environment.season = s.env?.season||'Spring'; Object.assign(environment.safeZone, s.env?.safeZone||{});
+        camera.x = s.camera?.x||0; camera.y=s.camera?.y||0; camera.z=s.camera?.z||1;
+        // rebuild entities (drop velocities)
+        food = (s.entities?.food||[]).map(o=> Object.assign(new Food(o.x,o.y), {id:o.id}));
+        critters = (s.entities?.critters||[]).map(o=> { const c=new Critter(o.x,o.y); Object.assign(c,{id:o.id, energy:o.energy, age:o.age, trait:o.trait}); return c; });
+        predators = (s.entities?.predators||[]).map(o=> { const p=new Predator(o.x,o.y); Object.assign(p,{id:o.id, energy:o.energy, age:o.age, trait:o.trait}); return p; });
+        apexPredators = (s.entities?.apexPredators||[]).map(o=> { const a=new ApexPredator(o.x,o.y); Object.assign(a,{id:o.id, energy:o.energy, age:o.age}); return a; });
+        if(s.sliders){ critterSlider.value=s.sliders.critter; predatorSlider.value=s.sliders.predator; apexSlider.value=s.sliders.apex; foodSlider.value=s.sliders.food; speedSlider.value=s.sliders.speed; critterSliderValue.textContent=s.sliders.critter; predatorSliderValue.textContent=s.sliders.predator; apexSliderValue.textContent=s.sliders.apex; foodSliderValue.textContent=s.sliders.food; speedSliderValue.textContent=parseFloat(s.sliders.speed).toFixed(1); timeScale=parseFloat(s.sliders.speed); speedDisplayEl.textContent=`${timeScale.toFixed(1)}x`; }
+        updateUI(); draw();
+      }catch(err){ alert('Invalid JSON'); } }; reader.readAsText(file);
+    });
+
+    // --- INIT ---
+    let chartReady=false; function init(){ setupCanvas(); setupChart(); reset(); chartReady=true; draw(); }
+    init();
+
+  });
+  </script>
+</body>
+</html>
